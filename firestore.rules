@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Cada usuario solo puede acceder a sus propios repostajes.
+    match /repostajes/{repostajeId} {
+
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner(data) {
+        return isSignedIn() && data.uid == request.auth.uid;
+      }
+
+      function isValidRepostaje(data) {
+        return data.keys().hasAll(['uid', 'fecha', 'vehiculo', 'litros', 'importe', 'createdAt'])
+          && data.keys().hasOnly(['uid', 'fecha', 'vehiculo', 'litros', 'importe', 'km', 'createdAt'])
+          && data.fecha is string
+          && data.vehiculo is string && data.vehiculo.size() > 0 && data.vehiculo.size() <= 100
+          && data.litros is number && data.litros > 0
+          && data.importe is number && data.importe > 0
+          && (!('km' in data) || data.km == null || (data.km is int && data.km >= 0))
+          && data.createdAt is timestamp;
+      }
+
+      // Lectura (get/list): la query del cliente filtra por uid == auth.uid.
+      allow read: if isOwner(resource.data);
+
+      allow create: if isOwner(request.resource.data)
+        && isValidRepostaje(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+
+      // No se permite cambiar el propietario del documento.
+      allow update: if isOwner(resource.data)
+        && isOwner(request.resource.data)
+        && isValidRepostaje(request.resource.data);
+
+      allow delete: if isOwner(resource.data);
+    }
+  }
+}
